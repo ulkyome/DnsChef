@@ -1,4 +1,4 @@
-Основан на https://github.com/iphelix/dnschef переписан на C# 
+Как идея взят с https://github.com/iphelix/dnschef 
 
 RESTful API - полное управление через HTTP endpoints
 
