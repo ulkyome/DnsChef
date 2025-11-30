@@ -77,21 +77,21 @@ Configuration File
 Edit /etc/dnschef/appsettings.json:
 ```
 {
-"Logging": {
-"LogLevel": {
-"Default": "Information",
-"Microsoft.AspNetCore": "Warning"
-}
-},
-"DnsSettings": {
-"Port": 5353,
-"UpstreamDns": "8.8.8.8",
-"Mappings": {
-"google.com": "127.0.0.1",
-"facebook.com": "127.0.0.1",
-"test.example.com": "192.168.1.100"
-}
-}
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "DnsSettings": {
+    "Port": 5353,
+    "UpstreamDns": "8.8.8.8",
+    "Mappings": {
+      "google.com": "127.0.0.1",
+      "facebook.com": "127.0.0.1",
+      "test.example.com": "192.168.1.100"
+    }
+  }
 }
 ```
 
@@ -112,43 +112,43 @@ http://your-server-ip
 
 API Endpoints
 Get Server Status:
-GET /api/dnsserver/status
-```
+```GET /api/dnsserver/status```
 Response:
+```
 {
-"isRunning": true,
-"port": 5353,
-"upstreamDns": "8.8.8.8",
-"totalMappings": 3,
-"requestsProcessed": 142,
-"startTime": "2024-01-15T10:30:00Z"
+  "isRunning": true,
+  "port": 5353,
+  "upstreamDns": "8.8.8.8",
+  "totalMappings": 3,
+  "requestsProcessed": 142,
+  "startTime": "2024-01-15T10:30:00Z"
 }
 ```
 Get All Mappings:
-GET /api/dnsmappings
-```
+```GET /api/dnsmappings```
 Response:
+```
 [
-{
-"domain": "google.com",
-"ipAddress": "127.0.0.1",
-"createdAt": "2024-01-15T10:30:00Z",
-"enabled": true
-}
+  {
+    "domain": "google.com",
+    "ipAddress": "127.0.0.1",
+    "createdAt": "2024-01-15T10:30:00Z",
+    "enabled": true
+  }
 ]
 ```
 Add DNS Mapping:
-POST /api/dnsmappings
+```POST /api/dnsmappings```
 ```
 Content-Type: application/json
 
 {
-"domain": "example.com",
-"ipAddress": "192.168.1.50"
+  "domain": "example.com",
+  "ipAddress": "192.168.1.50"
 }
 ```
 Remove DNS Mapping:
-DELETE /api/dnsmappings/example.com
+```DELETE /api/dnsmappings/example.com```
 
 Control Server:
 ```
