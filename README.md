@@ -151,10 +151,11 @@ Remove DNS Mapping:
 DELETE /api/dnsmappings/example.com
 
 Control Server:
+```
 POST /api/dnsserver/start
 POST /api/dnsserver/stop
 POST /api/dnsserver/restart
-
+```
 Use Cases
 Development & Testing
 Test website redirects
