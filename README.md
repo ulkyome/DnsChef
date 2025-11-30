@@ -31,3 +31,22 @@ Content-Type: application/json
 ```
 ### <ins>Удалить маппинг:</ins>
 `DELETE` ```/api/dnsmappings/example.com```
+
+
+
+### Сделать скрипты исполняемыми
+```chmod +x install-dnschef.sh build-dnschef.sh uninstall-dnschef.sh```
+
+### 1. Собрать приложение (на машине разработки)
+```./build-dnschef.sh```
+
+### 2. Скопировать папку publish на Debian сервер
+```scp -r publish/ user@debian-server:/tmp/dnschef/```
+
+### 3. На Debian сервере:
+```cd /tmp/dnschef
+sudo ./install-dnschef.sh```
+
+# 4. Проверить статус
+```sudo systemctl status dnschef
+journalctl -u dnschef -f```
