@@ -67,9 +67,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Models\" />
-    <Folder Include="Services\" />
-    <Folder Include="Controllers\" />
     <Folder Include="Middlewares\" />
     <Folder Include="Logs\" />
   </ItemGroup>

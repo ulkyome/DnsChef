@@ -1,6 +1,7 @@
 ﻿using DnsChef.Services;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DnsChef.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +19,7 @@ builder.Services.AddSwaggerGen();
 
 // Configure DNS Server Service
 builder.Services.AddSingleton<IDnsServerService, DnsServerService>();
+builder.Services.AddSingleton<ILogService, LogService>(); // Добавляем сервис логов
 
 // Configure logging
 builder.Services.AddLogging(loggingBuilder =>

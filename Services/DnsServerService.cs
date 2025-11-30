@@ -17,6 +17,7 @@ namespace DnsChef.Services
 
     public class DnsServerService : IDnsServerService
     {
+        private readonly ILogService _logService;
         private UdpClient? _udpServer;
         private bool _isRunning;
         private readonly Dictionary<string, DnsMapping> _dnsMappings;
@@ -27,8 +28,9 @@ namespace DnsChef.Services
         private DateTime _startTime;
         private CancellationTokenSource? _cancellationTokenSource;
 
-        public DnsServerService(IConfiguration configuration, ILogger<DnsServerService> logger)
+        public DnsServerService(IConfiguration configuration,ILogger<DnsServerService> logger,ILogService logService)
         {
+            _logService = logService;
             _logger = logger;
             _port = configuration.GetValue<int>("DnsSettings:Port", 5353);
             _upstreamDns = configuration.GetValue<string>("DnsSettings:UpstreamDns", "8.8.8.8") ?? "8.8.8.8";
@@ -206,10 +208,18 @@ namespace DnsChef.Services
                 var clientEndPoint = request.RemoteEndPoint;
                 var requestData = request.Buffer;
 
-                _logger.LogDebug("Received DNS request from {ClientEndPoint}", clientEndPoint);
+                // Логируем входящий запрос
+                _logService.AddLog(new LogEntry
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Level = "Information",
+                    Message = $"DNS request received from {clientEndPoint}",
+                    ClientIp = clientEndPoint.Address.ToString(),
+                    Action = "received"
+                });
 
                 var dnsRequest = DnsPacket.FromBytes(requestData);
-                var responsePacket = await ProcessDnsRequestAsync(dnsRequest);
+                var responsePacket = await ProcessDnsRequestAsync(dnsRequest, clientEndPoint.Address.ToString());
 
                 var responseData = responsePacket.ToBytes();
                 if (_udpServer != null && _isRunning)
@@ -220,15 +230,24 @@ namespace DnsChef.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing DNS request");
+
+                // Логируем ошибку
+                _logService.AddLog(new LogEntry
+                {
+                    Timestamp = DateTime.UtcNow,
+                    Level = "Error",
+                    Message = $"Error processing DNS request: {ex.Message}",
+                    Action = "error"
+                });
             }
         }
 
-        private async Task<DnsPacket> ProcessDnsRequestAsync(DnsPacket request)
+        private async Task<DnsPacket> ProcessDnsRequestAsync(DnsPacket request, string clientIp)
         {
             var response = new DnsPacket
             {
                 TransactionId = request.TransactionId,
-                Flags = 0x8180, // Response + Success
+                Flags = 0x8180,
                 Questions = request.Questions,
                 AnswerRRs = 0,
                 AuthorityRRs = 0,
@@ -245,9 +264,8 @@ namespace DnsChef.Services
                     _dnsMappings.TryGetValue(question.Name.ToLower(), out mapping);
                 }
 
-                if (mapping != null && mapping.Enabled && question.Type == 1) // A record
+                if (mapping != null && mapping.Enabled && question.Type == 1)
                 {
-                    // Преобразуем string в IPAddress для DNS ответа
                     if (IPAddress.TryParse(mapping.IpAddress, out var ipAddress))
                     {
                         var answer = new DnsResourceRecord
@@ -261,16 +279,24 @@ namespace DnsChef.Services
                         response.AnswerSection.Add(answer);
                         response.AnswerRRs++;
 
+                        // Логируем подмену DNS
+                        _logService.AddLog(new LogEntry
+                        {
+                            Timestamp = DateTime.UtcNow,
+                            Level = "Information",
+                            Message = $"DNS spoofed: {question.Name} -> {mapping.IpAddress}",
+                            Domain = question.Name,
+                            IpAddress = mapping.IpAddress,
+                            ClientIp = clientIp,
+                            QueryType = "A",
+                            Action = "spoofed"
+                        });
+
                         _logger.LogInformation("Spoofed DNS: {Domain} -> {IpAddress}", question.Name, mapping.IpAddress);
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Invalid IP address in mapping for {Domain}: {IpAddress}", question.Name, mapping.IpAddress);
                     }
                 }
                 else
                 {
-                    // Forward to upstream DNS
                     try
                     {
                         var realResponse = await ForwardToUpstreamDns(request.ToBytes());
@@ -282,11 +308,34 @@ namespace DnsChef.Services
                             response.AnswerRRs++;
                         }
 
+                        // Логируем перенаправление запроса
+                        _logService.AddLog(new LogEntry
+                        {
+                            Timestamp = DateTime.UtcNow,
+                            Level = "Information",
+                            Message = $"DNS forwarded: {question.Name}",
+                            Domain = question.Name,
+                            ClientIp = clientIp,
+                            QueryType = "A",
+                            Action = "forwarded"
+                        });
+
                         _logger.LogDebug("Forwarded DNS: {Domain}", question.Name);
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error forwarding DNS request for {Domain}", question.Name);
+
+                        // Логируем ошибку перенаправления
+                        _logService.AddLog(new LogEntry
+                        {
+                            Timestamp = DateTime.UtcNow,
+                            Level = "Error",
+                            Message = $"Error forwarding DNS for {question.Name}: {ex.Message}",
+                            Domain = question.Name,
+                            ClientIp = clientIp,
+                            Action = "error"
+                        });
                     }
                 }
             }
