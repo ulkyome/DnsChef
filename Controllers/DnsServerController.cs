@@ -9,11 +9,13 @@ namespace DnsChef.Controllers
     [Route("api/[controller]")]
     public class DnsServerController : ControllerBase
     {
+        private readonly ILogService _logService;
         private readonly IDnsServerService _dnsServerService;
         private readonly ILogger<DnsServerController> _logger;
 
-        public DnsServerController(IDnsServerService dnsServerService, ILogger<DnsServerController> logger)
+        public DnsServerController(ILogService logService, IDnsServerService dnsServerService, ILogger<DnsServerController> logger)
         {
+            _logService = logService;
             _dnsServerService = dnsServerService;
             _logger = logger;
         }
@@ -24,6 +26,7 @@ namespace DnsChef.Controllers
             try
             {
                 var status = _dnsServerService.GetStatus();
+                status.LogEntriesCount = _logService.GetTotalLogCount(); // Добавляем количество логов
                 return Ok(status);
             }
             catch (Exception ex)
