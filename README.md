@@ -191,42 +191,27 @@ Real-time DNS Query Monitoring
 sudo tcpdump -i any port 5353 -n
 ```
 Project Structure
+```
 DnsChef/
-
-Controllers/ # Web API controllers
-
-DnsMappingsController.cs
-
-DnsServerController.cs
-
-Models/ # Data models
-
-DnsMapping.cs
-
-Services/ # Business logic
-
-DnsServerService.cs
-
-Converters/ # JSON converters
-
-IPAddressConverter.cs
-
-Program.cs # Application entry point
-
-DnsChef.csproj # Project configuration
-
-appsettings.json # Configuration template
-
-Scripts/
-
-install-dnschef.sh
-
-build-dnschef.sh
-
-uninstall-dnschef.sh
-
-Security Considerations
-The service runs under a dedicated non-root user 'dnschef'
+├── Controllers/          # Web API controllers
+│   ├── DnsMappingsController.cs
+│   └── DnsServerController.cs
+├── Models/              # Data models
+│   └── DnsMapping.cs
+├── Services/            # Business logic
+│   └── DnsServerService.cs
+├── Converters/          # JSON converters
+│   └── IPAddressConverter.cs
+├── Program.cs           # Application entry point
+├── DnsChef.csproj      # Project configuration
+├── appsettings.json    # Configuration template
+└── Scripts/
+    ├── install-dnschef.sh
+    ├── build-dnschef.sh
+    └── uninstall-dnschef.sh
+```
+🔒 Security Considerations
+The service runs under a dedicated non-root user dnschef
 
 DNS service binds to port 5353 (non-privileged)
 
@@ -236,7 +221,8 @@ Configuration files are protected with proper permissions
 
 Systemd service includes security hardening options
 
-Troubleshooting
+🐛 Troubleshooting
+
 Common Issues
 Service fails to start:
 
@@ -245,19 +231,23 @@ sudo journalctl -u dnschef.service -n 50
 ```
 DNS queries not working:
 
+```
 # Test DNS resolution
 dig @your-server-ip google.com
+```
 Port 80 already in use:
 
-bash
+```
 sudo netstat -tulpn | grep :80
+```
 Firewall blocking access:
 
-bash
+```
 sudo ufw allow 80/tcp
 sudo ufw allow 5353/udp
+```
 Debug Mode
-Enable debug logging by editing /etc/dnschef/appsettings.json:
+Enable debug logging by editing ```/etc/dnschef/appsettings.json```:
 ```
 {
 "Logging": {
@@ -270,8 +260,9 @@ Enable debug logging by editing /etc/dnschef/appsettings.json:
 ```
 Then restart the service:
 
-bash
+```
 sudo systemctl restart dnschef
+```
 License
 This project is licensed under the MIT License.
 
