@@ -49,22 +49,36 @@ public class DnsPacket
 
     public static DnsPacket FromBytes(byte[] data)
     {
+        if (data == null || data.Length < 12) // Minimum DNS header size
+        {
+            throw new ArgumentException("Invalid DNS packet data");
+        }
+
         var packet = new DnsPacket();
         var offset = 0;
 
-        // Header
-        packet.TransactionId = ReadUInt16Network(data, ref offset);
-        packet.Flags = ReadUInt16Network(data, ref offset);
-        packet.Questions = ReadUInt16Network(data, ref offset);
-        packet.AnswerRRs = ReadUInt16Network(data, ref offset);
-        packet.AuthorityRRs = ReadUInt16Network(data, ref offset);
-        packet.AdditionalRRs = ReadUInt16Network(data, ref offset);
-
-        // Question section
-        for (int i = 0; i < packet.Questions; i++)
+        try
         {
-            var question = DnsQuestion.FromBytes(data, ref offset);
-            packet.QuestionSection.Add(question);
+            // Header
+            packet.TransactionId = ReadUInt16Network(data, ref offset);
+            packet.Flags = ReadUInt16Network(data, ref offset);
+            packet.Questions = ReadUInt16Network(data, ref offset);
+            packet.AnswerRRs = ReadUInt16Network(data, ref offset);
+            packet.AuthorityRRs = ReadUInt16Network(data, ref offset);
+            packet.AdditionalRRs = ReadUInt16Network(data, ref offset);
+
+            // Question section
+            for (int i = 0; i < packet.Questions; i++)
+            {
+                if (offset >= data.Length) break;
+
+                var question = DnsQuestion.FromBytes(data, ref offset);
+                packet.QuestionSection.Add(question);
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Failed to parse DNS packet", ex);
         }
 
         return packet;

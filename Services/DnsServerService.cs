@@ -1,4 +1,3 @@
-// Services/DnsServerService.cs
 using System.Net;
 using System.Net.Sockets;
 using DnsChef.Models;
@@ -21,22 +20,20 @@ namespace DnsChef.Services
         private UdpClient? _udpServer;
         private bool _isRunning;
         private readonly Dictionary<string, DnsMapping> _dnsMappings;
-        private readonly IPAddress _upstreamDns;
+        private readonly string _upstreamDns;
         private readonly int _port;
         private readonly ILogger<DnsServerService> _logger;
         private int _requestsProcessed;
         private DateTime _startTime;
+        private CancellationTokenSource? _cancellationTokenSource;
 
         public DnsServerService(IConfiguration configuration, ILogger<DnsServerService> logger)
         {
             _logger = logger;
             _port = configuration.GetValue<int>("DnsSettings:Port", 5353);
-
-            // Парсим IPAddress для upstream DNS
-            var upstreamDnsString = configuration.GetValue<string>("DnsSettings:UpstreamDns", "8.8.8.8") ?? "8.8.8.8";
-            _upstreamDns = IPAddress.Parse(upstreamDnsString);
-
+            _upstreamDns = configuration.GetValue<string>("DnsSettings:UpstreamDns", "8.8.8.8") ?? "8.8.8.8";
             _dnsMappings = new Dictionary<string, DnsMapping>(StringComparer.OrdinalIgnoreCase);
+            _cancellationTokenSource = new CancellationTokenSource();
 
             // Загрузка начальных маппингов из конфигурации
             var initialMappings = configuration.GetSection("DnsSettings:Mappings").Get<Dictionary<string, string>>();
@@ -59,6 +56,7 @@ namespace DnsChef.Services
                 _isRunning = true;
                 _requestsProcessed = 0;
                 _startTime = DateTime.UtcNow;
+                _cancellationTokenSource = new CancellationTokenSource();
 
                 _ = Task.Run(async () => await HandleRequestsAsync());
 
@@ -76,9 +74,26 @@ namespace DnsChef.Services
         {
             if (!_isRunning) return;
 
+            _logger.LogInformation("Stopping DNS server...");
+
             _isRunning = false;
-            _udpServer?.Close();
-            _udpServer = null;
+
+            // Отменяем все операции
+            _cancellationTokenSource?.Cancel();
+
+            try
+            {
+                _udpServer?.Close();
+                _udpServer?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error while closing UDP server");
+            }
+            finally
+            {
+                _udpServer = null;
+            }
 
             _logger.LogInformation("DNS Server stopped");
         }
@@ -98,16 +113,11 @@ namespace DnsChef.Services
 
         public void AddMapping(string domain, string ipAddress)
         {
-            if (!IPAddress.TryParse(ipAddress, out var ip))
+            if (!IPAddress.TryParse(ipAddress, out _))
             {
                 throw new ArgumentException("Invalid IP address format");
             }
 
-            AddMapping(domain, ip);
-        }
-
-        public void AddMapping(string domain, IPAddress ipAddress)
-        {
             var mapping = new DnsMapping
             {
                 Domain = domain.ToLower(),
@@ -153,22 +163,39 @@ namespace DnsChef.Services
 
         private async Task HandleRequestsAsync()
         {
-            while (_isRunning && _udpServer != null)
+            while (_isRunning && _udpServer != null && !_cancellationTokenSource!.Token.IsCancellationRequested)
             {
                 try
                 {
-                    var result = await _udpServer.ReceiveAsync();
+                    var result = await _udpServer.ReceiveAsync(_cancellationTokenSource.Token);
                     _ = Task.Run(async () => await ProcessRequestAsync(result));
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.LogDebug("DNS server operation cancelled - shutting down");
+                    break;
                 }
                 catch (ObjectDisposedException)
                 {
+                    _logger.LogDebug("UDP client disposed - shutting down");
+                    break;
+                }
+                catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted)
+                {
+                    _logger.LogDebug("Socket operation aborted - shutting down");
                     break;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error receiving DNS request");
+                    if (_isRunning) // Логируем только если сервер должен быть запущен
+                    {
+                        _logger.LogError(ex, "Error receiving DNS request");
+                    }
+                    await Task.Delay(1000); // Задержка перед повторной попыткой
                 }
             }
+
+            _logger.LogDebug("DNS request handler stopped");
         }
 
         private async Task ProcessRequestAsync(UdpReceiveResult request)
@@ -185,7 +212,7 @@ namespace DnsChef.Services
                 var responsePacket = await ProcessDnsRequestAsync(dnsRequest);
 
                 var responseData = responsePacket.ToBytes();
-                if (_udpServer != null)
+                if (_udpServer != null && _isRunning)
                 {
                     await _udpServer.SendAsync(responseData, responseData.Length, clientEndPoint);
                 }
@@ -220,32 +247,47 @@ namespace DnsChef.Services
 
                 if (mapping != null && mapping.Enabled && question.Type == 1) // A record
                 {
-                    var answer = new DnsResourceRecord
+                    // Преобразуем string в IPAddress для DNS ответа
+                    if (IPAddress.TryParse(mapping.IpAddress, out var ipAddress))
                     {
-                        Name = question.Name,
-                        Type = question.Type,
-                        Class = question.Class,
-                        TTL = 300,
-                        IPAddress = mapping.IpAddress
-                    };
-                    response.AnswerSection.Add(answer);
-                    response.AnswerRRs++;
+                        var answer = new DnsResourceRecord
+                        {
+                            Name = question.Name,
+                            Type = question.Type,
+                            Class = question.Class,
+                            TTL = 300,
+                            IPAddress = ipAddress
+                        };
+                        response.AnswerSection.Add(answer);
+                        response.AnswerRRs++;
 
-                    _logger.LogInformation("Spoofed DNS: {Domain} -> {IpAddress}", question.Name, mapping.IpAddress);
+                        _logger.LogInformation("Spoofed DNS: {Domain} -> {IpAddress}", question.Name, mapping.IpAddress);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Invalid IP address in mapping for {Domain}: {IpAddress}", question.Name, mapping.IpAddress);
+                    }
                 }
                 else
                 {
                     // Forward to upstream DNS
-                    var realResponse = await ForwardToUpstreamDns(request.ToBytes());
-                    var realDnsResponse = DnsPacket.FromBytes(realResponse);
-
-                    foreach (var realAnswer in realDnsResponse.AnswerSection)
+                    try
                     {
-                        response.AnswerSection.Add(realAnswer);
-                        response.AnswerRRs++;
-                    }
+                        var realResponse = await ForwardToUpstreamDns(request.ToBytes());
+                        var realDnsResponse = DnsPacket.FromBytes(realResponse);
 
-                    _logger.LogDebug("Forwarded DNS: {Domain}", question.Name);
+                        foreach (var realAnswer in realDnsResponse.AnswerSection)
+                        {
+                            response.AnswerSection.Add(realAnswer);
+                            response.AnswerRRs++;
+                        }
+
+                        _logger.LogDebug("Forwarded DNS: {Domain}", question.Name);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error forwarding DNS request for {Domain}", question.Name);
+                    }
                 }
             }
 
@@ -255,12 +297,18 @@ namespace DnsChef.Services
         private async Task<byte[]> ForwardToUpstreamDns(byte[] requestData)
         {
             using var upstreamClient = new UdpClient();
-            var upstreamEndPoint = new IPEndPoint(_upstreamDns, 53);
+            var upstreamEndPoint = new IPEndPoint(IPAddress.Parse(_upstreamDns), 53);
 
             await upstreamClient.SendAsync(requestData, requestData.Length, upstreamEndPoint);
             var response = await upstreamClient.ReceiveAsync();
 
             return response.Buffer;
+        }
+
+        public void Dispose()
+        {
+            StopAsync().Wait();
+            _cancellationTokenSource?.Dispose();
         }
     }
 }
